@@ -1,5 +1,5 @@
 {
-  "name": "bluehome-ot-frontend-full",
+  "name": "bluehome-ot-frontend",
   "version": "1.0.0",
   "private": true,
   "dependencies": {
@@ -7,12 +7,14 @@
     "react-dom": "^18.2.0",
     "react-scripts": "5.0.1",
     "jspdf": "^2.5.1",
-    "react-signature-canvas": "^1.0.6"
+    "react-signature-canvas": "^1.0.6",
+    "gh-pages": "^6.1.1"
   },
+  "homepage": "https://pipemene.github.io/bluehome-ot-frontend",
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d build"
   }
 }

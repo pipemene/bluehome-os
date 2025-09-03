@@ -1,22 +1,17 @@
-# BlueHome OT Frontend (Completo)
-App React para radicar y gestionar órdenes de trabajo conectada al backend (Railway) y a S3.
+# BlueHome OT Frontend — FULL (GH Pages listo)
 
-## Variables
-- Crear `.env` con: `REACT_APP_API_URL=https://<tu-backend>.railway.app`
-
-## Desarrollo
-```bash
+- Backend apuntado a:
+```
+REACT_APP_API_URL=https://bluehome-os-production.up.railway.app
+```
+- Publicación por GitHub Pages:
+```
 npm install
-npm start
+git init
+git remote add origin https://github.com/pipemene/bluehome-ot-frontend.git
+git add .
+git commit -m "init"
+git push -u origin main
+npm run deploy
 ```
-
-## Producción (GitHub Pages o tu hosting)
-```bash
-npm run build
-# sube la carpeta build/ a tu hosting, o configura gh-pages si prefieres
-```
-
-## Flujo
-- Inquilino: radica orden (sube fotos/video a S3 o en base64 si no hay S3).
-- Admin: lista y cambia estados.
-- Técnico: inicia sesión (usuario: tecnico), toma orden, sube evidencias, firma, genera PDF y lo sube a S3 + envía por email.
+Si cambias nombre del repo/usuario, actualiza `homepage` en `package.json` y vuelve a `npm run deploy`.

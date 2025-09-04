@@ -1,3 +1,138 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>BlueHome OT</title></head><body><div id="root"></div></body></html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BlueHome OT</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://unpkg.com/signature_pad@4.2.0/dist/signature_pad.umd.min.js"></script>
+  <style>
+    *{box-sizing:border-box} body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;background:#f8fafc;color:#0f172a}
+    .container{max-width:1100px;margin:0 auto;padding:16px} .card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:16px;margin-bottom:16px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+    .btn{appearance:none;border:1px solid #334155;background:#0ea5e9;color:#fff;border-radius:10px;padding:8px 12px;font-weight:600;cursor:pointer}
+    .btn.secondary{background:#fff;color:#0f172a;border:1px solid #cbd5e1}
+    .input,select,textarea{width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:10px}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px} .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+    .badge{display:inline-block;padding:4px 8px;border-radius:999px;background:#f1f5f9;border:1px solid #e2e8f0;font-size:12px} .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .header{position:sticky;top:0;background:#fff;border-bottom:1px solid #e2e8f0;z-index:10} .header-inner{display:flex;gap:12px;align-items:center;max-width:1100px;margin:0 auto;padding:12px 16px}
+    .tabs{margin-left:auto;display:flex;gap:8px} .tab{padding:6px 10px;border:1px solid #cbd5e1;border-radius:999px;background:#fff;cursor:pointer} .tab.active{background:#0284c7;color:#fff;border-color:#0284c7}
+    .thumb{width:84px;height:84px;border-radius:10px;border:1px solid #e2e8f0;object-fit:cover} .small{font-size:12px;color:#475569} .mono{font-family:ui-monospace,Menlo,Consolas,monospace;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:8px;overflow:auto}
+    .right{margin-left:auto} hr.sep{border:0;border-top:1px dashed #e2e8f0;margin:12px 0} .sig{width:100%;height:160px;border:1px solid #e2e8f0;border-radius:12px;background:#fff}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const API_URL = "https://bluehome-os-production.up.railway.app"; const { jsPDF } = window.jspdf;
+    const STATUS = { NEW:"Pendiente de asignación", IN_PROGRESS:"En proceso", DONE_WAITING_SIGN:"Finalizada (pendiente firma)", CLOSED:"Cerrada con PDF" };
+    const TYPE_OPTIONS = [{value:"reparacion",label:"Reparación"},{value:"mantenimiento",label:"Mantenimiento"},{value:"otro",label:"Otro"}];
+
+    async function fileToDataURL(file){return await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(file);});}
+    async function getUploadUrl(contentType,withAuth=false){try{const h={"Content-Type":"application/json"};if(withAuth){const t=localStorage.getItem("token");if(t)h.Authorization="Bearer "+t;}const r=await fetch(API_URL+"/api/upload-url",{method:"POST",headers:h,body:JSON.stringify({contentType})});if(!r.ok)throw new Error(r.status);return await r.json();}catch(e){return null;}}
+    async function authorizedFetch(path,opts={}){const t=localStorage.getItem("token");return fetch(API_URL+path,{...opts,headers:{"Content-Type":"application/json",...(opts.headers||{}),...(t?{Authorization:"Bearer "+t}:{})}});}
+
+    function App(){const [route,setRoute]=React.useState("inquilino");return(<><div className="header"><div className="header-inner">
+      <div style={{width:40,height:40,borderRadius:12,background:"#0284c7"}}/><div><div style={{fontWeight:700}}>Blue Home Inmobiliaria</div><div className="small">Órdenes de Trabajo conectadas a backend</div></div>
+      <div className="tabs"><button className={"tab "+(route==="inquilino"?"active":"")} onClick={()=>setRoute("inquilino")}>Radicar (Inquilino)</button>
+      <button className={"tab "+(route==="admin"?"active":"")} onClick={()=>setRoute("admin")}>Órdenes (Admin)</button>
+      <button className={"tab "+(route==="tecnico"?"active":"")} onClick={()=>setRoute("tecnico")}>Técnicos</button></div></div></div>
+      <div className="container"><AuthBar/>{route==="inquilino"&&<TenantForm/>}{route==="admin"&&<AdminBoard/>}{route==="tecnico"&&<TechBoard/>}
+      <div className="small" style={{textAlign:"center",marginTop:16}}>API: {API_URL} — Static (sin build).</div></div></>);}
+
+    function AuthBar(){const [u,setU]=React.useState("");const [p,setP]=React.useState("");const [t,setT]=React.useState(localStorage.getItem("token")||"");
+      async function login(){const r=await fetch(API_URL+"/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u,password:p})});const j=await r.json();if(j.token){localStorage.setItem("token",j.token);setT(j.token);alert("Ingreso exitoso");}else alert(j.error||"No se pudo iniciar sesión");}
+      function logout(){localStorage.removeItem("token");setT("");}
+      return(<div className="card toolbar"><span className="small">API: {API_URL}</span><div className="right"/>
+        {t?(<><span className="badge">Conectado</span><button className="btn secondary" onClick={logout}>Salir</button></>)
+          :(<><input className="input" placeholder="Usuario (admin / tecnico)" value={u} onChange={e=>setU(e.target.value)} style={{maxWidth:200}}/>
+              <input className="input" type="password" placeholder="Contraseña" value={p} onChange={e=>setP(e.target.value)} style={{maxWidth:200}}/>
+              <button className="btn" onClick={login}>Ingresar</button></>)}</div>);}
+
+    function TenantForm(){const [f,setF]=React.useState({codigo:"",nombre:"",telefono:"",email:"",tipo:"reparacion",descripcion:""});
+      const [imgs,setImgs]=React.useState([]);const [video,setVideo]=React.useState(null);const [rad,setRad]=React.useState(null);
+      const onChange=e=>setF(s=>({...s,[e.target.name]:e.target.value}));
+      async function uploadSmart(file,auth=false){const ps=await getUploadUrl(file.type,auth);if(ps?.uploadUrl&&ps?.publicUrl){await fetch(ps.uploadUrl,{method:"PUT",body:file});return {url:ps.publicUrl};}
+        return {base64:await fileToDataURL(file)};}
+      async function handleImg(e){const files=Array.from(e.target.files||[]).slice(0,2);const out=[];for(const fl of files)out.push(await uploadSmart(fl,false));setImgs(out);}
+      async function handleVideo(e){const fl=e.target.files?.[0];if(!fl)return;setVideo(await uploadSmart(fl,false));}
+      async function submit(){if(!f.codigo||!f.nombre||!f.telefono||!f.descripcion)return alert("Completa código, nombre, teléfono y descripción.");
+        const r=await fetch(API_URL+"/api/orders",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...f,imgs,video})});const j=await r.json();if(j.error)return alert(j.error);setRad(j.radicado);
+        setF({codigo:"",nombre:"",telefono:"",email:"",tipo:"reparacion",descripcion:""});setImgs([]);setVideo(null);}
+      return(<div className="card"><h2>Radicar solicitud de reparación</h2><div className="row">
+        <Input label="Código del inmueble" name="codigo" value={f.codigo} onChange={onChange}/><Select label="Tipo" name="tipo" value={f.tipo} onChange={onChange} options={TYPE_OPTIONS}/>
+        <Input label="Nombre del inquilino" name="nombre" value={f.nombre} onChange={onChange}/><Input label="Teléfono" name="telefono" value={f.telefono} onChange={onChange}/>
+        <Input label="Correo (opcional)" name="email" value={f.email} onChange={onChange}/><Textarea label="Descripción del daño / solicitud" name="descripcion" value={f.descripcion} onChange={onChange}/>
+        <div><label className="small">Fotos (máx. 2)</label><input type="file" accept="image/*" multiple onChange={handleImg}/></div>
+        <div><label className="small">Video (opcional)</label><input type="file" accept="video/*" onChange={handleVideo}/></div></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button className="btn" onClick={submit}>Generar radicado</button></div>
+        {rad&&<div className="card"><div className="small">Radicado creado:</div><div className="mono">{rad}</div></div>}</div>);}
+
+    function AdminBoard(){const [orders,setOrders]=React.useState([]);const [q,setQ]=React.useState("");
+      async function load(){const r=await authorizedFetch("/api/orders");if(r.ok)setOrders(await r.json());else alert("Inicia sesión para ver órdenes.");}
+      React.useEffect(()=>{load();},[]);
+      const filtered=orders.filter(o=>(o.radicado+" "+o.tenant?.codigo+" "+o.tenant?.nombre+" "+o.status).toLowerCase().includes(q.toLowerCase()));
+      async function changeStatus(id,status){const r=await authorizedFetch("/api/orders/"+id,{method:"PATCH",body:JSON.stringify({status})});if(r.ok)load();else alert("No se pudo actualizar");}
+      return(<div className="card"><div className="toolbar"><h2>Órdenes (Admin)</h2><div className="right"/><input className="input" placeholder="Buscar..." value={q} onChange={e=>setQ(e.target.value)} style={{maxWidth:240}}/>
+      <button className="btn secondary" onClick={load}>Refrescar</button></div><div className="grid">{filtered.map(o=>(<div key={o.id} className="card">
+      <div className="toolbar"><span className="mono">{o.radicado}</span><span className="badge">{o.status}</span><div className="right small">{new Date(o.createdAt).toLocaleString()}</div></div>
+      <p className="small"><b>Inquilino:</b> {o.tenant?.nombre} — {o.tenant?.telefono}</p><p className="small"><b>Descripción:</b> {o.tenant?.descripcion}</p>
+      <div className="toolbar" style={{marginTop:8}}><select className="input" value={o.status} onChange={e=>changeStatus(o.id,e.target.value)}>{Object.values(STATUS).map(s=><option key={s} value={s}>{s}</option>)}</select></div>
+      </div>))}</div></div>);}
+
+    function TechBoard(){const [orders,setOrders]=React.useState([]);const [me,setMe]=React.useState("");
+      React.useEffect(()=>{authorizedFetch("/api/orders").then(r=>r.ok?r.json():Promise.reject()).then(setOrders).catch(()=>alert("Inicia sesión como técnico."));},[]);
+      const my=orders.filter(o=>o.assignedTo===me);const available=orders.filter(o=>!o.assignedTo&&o.status===STATUS.NEW);
+      async function takeOrder(id){const r=await authorizedFetch("/api/orders/"+id,{method:"PATCH",body:JSON.stringify({assignedTo:me,status:STATUS.IN_PROGRESS})});if(r.ok)setOrders(await (await authorizedFetch("/api/orders")).json());else alert("No se pudo tomar");}
+      return(<div className="card"><div className="toolbar"><h2>Portal Técnicos</h2><div className="right"/></div><div className="row">
+      <Input label="Tu nombre para asignación" value={me} onChange={e=>setMe(e.target.value)}/></div><h3>Órdenes disponibles</h3><div className="grid">
+      {available.map(o=>(<div key={o.id} className="card"><div className="toolbar"><span className="mono">{o.radicado}</span><span className="badge">{o.status}</span><div className="right small">{new Date(o.createdAt).toLocaleString()}</div></div>
+      <p className="small"><b>Inquilino:</b> {o.tenant?.nombre} — {o.tenant?.telefono}</p><button className="btn" disabled={!me} onClick={()=>takeOrder(o.id)}>Tomar orden</button></div>))}</div>
+      <h3>Mis órdenes</h3><div className="grid">{my.map(o=><WorkCard key={o.id} order={o} me={me} />)}</div></div>);}
+
+    function WorkCard({order,me}){const [before,setBefore]=React.useState(order.work?.before||[]);const [during,setDuring]=React.useState(order.work?.during||[]);
+      const [after,setAfter]=React.useState(order.work?.after||[]);const [materials,setMaterials]=React.useState(order.work?.materials||"");const [notes,setNotes]=React.useState(order.work?.notes||"");
+      const [sigData,setSigData]=React.useState(order.signature||null);let pad=null;let emailEl=null;
+      async function uploadAuth(file){const ps=await getUploadUrl(file.type,true);if(ps?.uploadUrl&&ps?.publicUrl){await fetch(ps.uploadUrl,{method:"PUT",body:file});return {url:ps.publicUrl};}return {base64:await fileToDataURL(file)};}
+      async function pick(setter,e,limit=10){const files=Array.from(e.target.files||[]).slice(0,limit);const out=[...(setter===setBefore?before:setter===setDuring?during:after)];for(const f of files) out.push(await uploadAuth(f));setter(out);}
+      async function persist(next){const r=await authorizedFetch("/api/orders/"+order.id,{method:"PATCH",body:JSON.stringify(next)});if(!r.ok)alert("No se guardó");}
+      function initPad(){const canvas=document.getElementById("sig-"+order.id);pad=new SignaturePad.SignaturePad(canvas);}
+      function captureSig(){if(!pad){initPad();}if(pad.isEmpty())return alert("Firma vacía");const d=pad.toDataURL();setSigData(d);persist({signature:d});}
+      async function saveWork(){await persist({work:{before,during,after,materials,notes},status:STATUS.DONE_WAITING_SIGN});alert("Trabajo guardado. Estado: Finalizada (pend. firma)");}
+      async function generatePDF(){const { jsPDF } = window.jspdf;const doc=new jsPDF({unit:"pt",format:"a4"});const margin=40;let y=margin;const W=doc.internal.pageSize.getWidth();
+        const text=(t,inc=14,size=10)=>{doc.setFontSize(size);doc.text(t,margin,y);y+=inc;};doc.setFontSize(16);text("Blue Home Inmobiliaria — Acta de Trabajo",18,16);
+        text("Radicado: "+order.radicado);text("Fecha: "+new Date().toLocaleString());text("Técnico: "+(me||order.assignedTo||"—"));text("Estado: "+order.status);
+        text("Código Inmueble: "+(order.tenant?.codigo||""));text("Inquilino: "+(order.tenant?.nombre||"")+" — Tel: "+(order.tenant?.telefono||""));
+        y+=6;doc.setFontSize(12);doc.text("Descripción de la solicitud:",margin,y);y+=12;doc.setFontSize(10);const lines=doc.splitTextToSize(order.tenant?.descripcion||"",W-margin*2);doc.text(lines,margin,y);y+=12+lines.length*10;
+        const addGal=(title,arr)=>{if(!arr?.length)return;if(y>740){doc.addPage();y=margin;}doc.setFontSize(12);doc.text(title,margin,y);y+=8;const size=140,gap=10;let x=margin;arr.forEach(img=>{if(y>760){doc.addPage();y=margin;x=margin;}const src=img.url||img.base64||img.data;doc.addImage(src,"JPEG",x,y,size,size);x+=size+gap;if(x+size>W-margin){x=margin;y+=size+gap;}});y+=6;};
+        addGal("Antes:",before);addGal("Durante:",during);addGal("Después:",after);
+        if(y>740){doc.addPage();y=margin;}doc.setFontSize(12);doc.text("Materiales utilizados:",margin,y);y+=12;doc.setFontSize(10);const m=doc.splitTextToSize(materials||"—",W-margin*2);doc.text(m,margin,y);y+=12+m.length*10;
+        if(y>740){doc.addPage();y=margin;}doc.setFontSize(12);doc.text("Observaciones del técnico:",margin,y);y+=12;doc.setFontSize(10);const n=doc.splitTextToSize(notes||"—",W-margin*2);doc.text(n,margin,y);y+=12+n.length*10;
+        if(sigData){if(y>640){doc.addPage();y=margin;}doc.setFontSize(12);doc.text("Firma del inquilino:",margin,y);y+=6;doc.addImage(sigData,"PNG",margin,y,220,110);y+=120;}
+        const blob=doc.output("blob");const pdfBase64=doc.output("datauristring");
+        try{const file=new File([blob],"Acta_"+order.radicado+".pdf",{type:"application/pdf"});const ps=await getUploadUrl("application/pdf",true);
+          if(ps?.uploadUrl&&ps?.publicUrl){await fetch(ps.uploadUrl,{method:"PUT",body:file});await persist({pdfUrl:ps.publicUrl,status:STATUS.CLOSED});}
+          else{await persist({status:STATUS.CLOSED});}
+        }catch{await persist({status:STATUS.CLOSED});}
+        const to=(emailEl&&emailEl.value)||""; if(to){try{const r=await authorizedFetch("/api/send-pdf",{method:"POST",body:JSON.stringify({orderId:order.id,toEmail:to,pdfBase64})});const j=await r.json();alert(j.preview?("Enviado. Vista previa: "+j.preview):"PDF enviado.");}catch{alert("No se pudo enviar el PDF por email");}}
+      }
+      return(<div className="card"><div className="toolbar"><span className="mono">{order.radicado}</span><span className="badge">{order.status}</span><div className="right small">{new Date(order.createdAt).toLocaleString()}</div></div>
+        <div className="row"><div><label className="small">Fotos ANTES</label><input type="file" multiple accept="image/*" onChange={e=>pick(setBefore,e)}/><div className="toolbar">{before.map((im,i)=><img key={i} className="thumb" src={im.url||im.base64||im.data}/>)}</div></div>
+        <div><label className="small">Fotos DURANTE</label><input type="file" multiple accept="image/*" onChange={e=>pick(setDuring,e)}/><div className="toolbar">{during.map((im,i)=><img key={i} className="thumb" src={im.url||im.base64||im.data}/>)}</div></div>
+        <div><label className="small">Fotos DESPUÉS</label><input type="file" multiple accept="image/*" onChange={e=>pick(setAfter,e)}/><div className="toolbar">{after.map((im,i)=><img key={i} className="thumb" src={im.url||im.base64||im.data}/>)}</div></div></div>
+        <div className="row"><Textarea label="Materiales usados" value={materials} onChange={e=>setMaterials(e.target.value)}/><Textarea label="Observaciones del técnico" value={notes} onChange={e=>setNotes(e.target.value)}/></div>
+        <div className="row"><div className="card"><div className="small"><b>Firma del inquilino</b></div><canvas id={"sig-"+order.id} className="sig"></canvas>
+        <div className="toolbar" style={{marginTop:8}}><button className="btn secondary" onClick={()=>{setSigData(null);}}>Limpiar</button><button className="btn" onClick={captureSig}>Guardar firma</button></div></div>
+        <div className="card"><label className="small">Enviar PDF a este correo</label><input className="input" id={"email-"+order.id} ref={el=>emailEl=el}/><div className="toolbar" style={{marginTop:8}}>
+        <button className="btn secondary" onClick={saveWork}>Guardar (pend. firma)</button><button className="btn" onClick={generatePDF}>Generar PDF y Cerrar</button></div></div></div></div>);}
+
+    function Input({label,name,value,onChange,placeholder}){return <label className="small"><div>{label}</div><input className="input" name={name} value={value} onChange={onChange} placeholder={placeholder}/></label>;}
+    function Textarea({label,name,value,onChange}){return <label className="small"><div>{label}</div><textarea className="input" rows={5} name={name} value={value} onChange={onChange}/></label>;}
+    function Select({label,name,value,onChange,options}){return <label className="small"><div>{label}</div><select className="input" name={name} value={value} onChange={onChange}>{options.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></label>;}
+
+    const root = ReactDOM.createRoot(document.getElementById("root")); root.render(<App/>);
+  </script>
+</body>
+</html>
